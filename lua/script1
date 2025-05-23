@@ -1,0 +1,368 @@
+local TweenService = game:GetService("TweenService")
+local PathfindingService = game:GetService("PathfindingService")
+local CarModule = game.ReplicatedStorage.CarModule
+local ServerStorage = game:GetService("ServerStorage")
+
+local Map = game.Workspace.Map
+
+local Car = game.Workspace.MiniCargoVan
+
+local CarShipment = Car.Shipment
+local BoxShipment = Map.BoxesShipment
+
+local CarPrimaryPart = Car.PrimaryPart
+local CarSpawner = game.Workspace.CarSpawner
+local Destination = game.Workspace.Destination
+local Destination2 = game.Workspace.Destination2
+local Speed = 10
+
+local Npc = game.Workspace:WaitForChild("Noob")
+local HumanoidRootPart = Npc.HumanoidRootPart
+local WalkAnimation = Npc.WalkAnim
+local NpcAnim = Npc.Humanoid:LoadAnimation(WalkAnimation)
+local WalkWithBoxAnimation = Npc.WalkWithBoxAnim
+local WalkWithBoxAnim = Npc.Humanoid:LoadAnimation(WalkWithBoxAnimation)
+local PutBoxInCarAnimation = Npc.PutBoxInCar
+local PutBoxInCarAnim = Npc.Humanoid:LoadAnimation(PutBoxInCarAnimation)
+
+local door = game.Workspace.Warehouse.Door
+local hinge = door.hinge
+
+local IndoorPart = game.Workspace.Indoor
+local OutDoorPart = game.Workspace.Outdoor
+
+local Box = game.Workspace.Box
+
+local Trucks = {
+	[1] = {name = "LightCar", carImage = "rbxassetid://94979414889016"},
+	[2] = {name = "MiniCargoVan", cost = 1500, carImage = "rbxassetid://79666974042394"},
+	[3] = {name = "MediumCargoVan", cost = 5000, carImage = "rbxassetid://70983761812274"},
+	[4] = {name = "HighCargoVan", cost = 15000, carImage = "rbxassetid://102731109745619"}
+}
+
+local doorOpened = false
+
+local function openDoor()
+	if not doorOpened then
+		local goal = {
+			CFrame = hinge.CFrame * CFrame.Angles(0, math.rad(-90), 0) 
+		}
+
+		local tweenInfo = TweenInfo.new(0.75, Enum.EasingStyle.Linear, Enum.EasingDirection.Out) 
+		local tween = TweenService:Create(hinge, tweenInfo, goal)
+
+		tween:Play()
+		tween.Completed:Wait()
+		doorOpened = true
+	end
+end
+
+local function closeDoor()
+	if doorOpened then
+		local goal = {
+			CFrame = hinge.CFrame * CFrame.Angles(0, math.rad(90), 0)
+		}
+
+		local tweenInfo = TweenInfo.new(0.75, Enum.EasingStyle.Linear, Enum.EasingDirection.Out) 
+		local tween = TweenService:Create(hinge, tweenInfo, goal)
+
+		tween:Play()
+		tween.Completed:Wait()
+		doorOpened = false
+	end
+end
+
+local TweenService = game:GetService("TweenService")
+
+local function OpenDoorCarShipment(open)
+	local CarShipmentDoorRight = Car.DoorShipmentRight
+	local CarShipmentDoorLeft = Car.DoorShipmentLeft
+
+	local HingeRight = CarShipmentDoorRight.Hinge
+	local HingeLeft = CarShipmentDoorLeft.Hinge
+
+	if not HingeRight:FindFirstChild("InitialCFrame") then
+		local rightInitialCFrame = Instance.new("CFrameValue")
+		rightInitialCFrame.Name = "InitialCFrame"
+		rightInitialCFrame.Value = HingeRight.CFrame
+		rightInitialCFrame.Parent = HingeRight
+	end
+
+	if not HingeLeft:FindFirstChild("InitialCFrame") then
+		local leftInitialCFrame = Instance.new("CFrameValue")
+		leftInitialCFrame.Name = "InitialCFrame"
+		leftInitialCFrame.Value = HingeLeft.CFrame
+		leftInitialCFrame.Parent = HingeLeft
+	end
+
+	local targetAngle = open and 90 or 0
+
+	local rightGoal = {CFrame = HingeRight.CFrame * CFrame.Angles(0, math.rad(targetAngle), 0)}
+	local rightTween = TweenService:Create(HingeRight, TweenInfo.new(1), rightGoal)
+
+	local leftGoal = {CFrame = HingeLeft.CFrame * CFrame.Angles(0, -math.rad(targetAngle), 0)}
+	local leftTween = TweenService:Create(HingeLeft, TweenInfo.new(1), leftGoal)
+
+	rightTween:Play()
+	leftTween:Play()
+end
+
+local function closeCarDoor()
+	local CarShipmentDoorRight = Car.DoorShipmentRight
+	local CarShipmentDoorLeft = Car.DoorShipmentLeft
+
+	local HingeRight = CarShipmentDoorRight.Hinge
+	local HingeLeft = CarShipmentDoorLeft.Hinge
+
+	if HingeRight:FindFirstChild("InitialCFrame") and HingeLeft:FindFirstChild("InitialCFrame") then
+		local rightGoal = {CFrame = HingeRight.InitialCFrame.Value}
+		local rightTween = TweenService:Create(HingeRight, TweenInfo.new(1), rightGoal)
+
+		local leftGoal = {CFrame = HingeLeft.InitialCFrame.Value}
+		local leftTween = TweenService:Create(HingeLeft, TweenInfo.new(1), leftGoal)
+
+		rightTween:Play()
+		leftTween:Play()
+	
+	else
+		warn("InitialCFrame not found for one or both hinges.")
+	end
+end
+
+local function walkTo(part, anim)
+	local Path = PathfindingService:CreatePath({
+		AgentCanJump = true,
+		AgentRadius = 1,
+		AgentHeight = 1,
+		AgentCanClimb = true,
+	})
+
+	local success, errorMessage = pcall(function()
+		Path:ComputeAsync(HumanoidRootPart.Position, part.Position)
+	end)
+
+	if not success then
+		warn("Pathfinding failed: " .. errorMessage)
+		return
+	end
+
+	if Path.Status == Enum.PathStatus.Success then
+		if anim == "Default" then
+			NpcAnim.Looped = true
+			NpcAnim:Play()
+		elseif anim == "WalkWithBox" then
+			WalkWithBoxAnim.Looped = true
+			WalkWithBoxAnim:Play()
+		elseif anim == "PutInTheCar" then
+			WalkWithBoxAnim.Looped = true
+			WalkWithBoxAnim:Play()
+		end
+
+		local doorAlredayOpened = false
+		local doorCarAlredayOpened = false
+
+		for _, waypoint in Path:GetWaypoints() do
+			Npc.Humanoid:MoveTo(waypoint.Position)
+			Npc.Humanoid.MoveToFinished:Wait()
+
+			local distanceToDoor = (Npc.HumanoidRootPart.Position - door.Position).Magnitude
+			if distanceToDoor < 7 and not doorAlredayOpened then
+				openDoor()
+				doorAlredayOpened = true
+				wait(0.5)
+			end
+
+			local distanceToShipment = (Npc.HumanoidRootPart.Position - CarShipment.Position).Magnitude
+			if distanceToShipment < 4 and anim == "PutInTheCar" and not doorCarAlredayOpened then
+				OpenDoorCarShipment(true)
+				doorCarAlredayOpened = true
+				wait(0.5)
+			end
+
+			local distanceFromDoor = (Npc.HumanoidRootPart.Position - door.Position).Magnitude
+			if doorAlredayOpened and distanceFromDoor > 10 then
+				closeDoor()
+			end
+
+			if (Npc.HumanoidRootPart.Position - part.Position).Magnitude < 8 then
+				if anim == "Default" then
+					NpcAnim.Looped = false
+					NpcAnim:Stop()
+				elseif anim == "WalkWithBox" then
+					WalkWithBoxAnim.Looped = false
+					WalkWithBoxAnim:Stop()
+				elseif anim == "PutInTheCar" then
+					WalkWithBoxAnim.Looped = false
+					WalkWithBoxAnim:Stop()
+					Npc:SetPrimaryPartCFrame(CarShipment.CFrame)
+					local newCframe = CFrame.new(CarShipment.Position) * CFrame.Angles(0, 0, 0)
+					Npc:SetPrimaryPartCFrame(newCframe)
+					PutBoxInCarAnim:Play()
+				end
+				break
+			end
+		end
+
+		if anim == "Default" then
+			NpcAnim.Looped = false
+			NpcAnim:Stop()
+		elseif anim == "WalkWithBox" then
+			WalkWithBoxAnim.Looped = false
+			WalkWithBoxAnim:Stop()
+		elseif anim == "PutInTheCar" then
+			WalkWithBoxAnim.Looped = false
+			WalkWithBoxAnim:Stop()
+		end
+	else
+		warn("Pathfinding failed: No path found.")
+		return
+	end
+end
+
+local function spawnBoxInNpc()
+	local CloneOfBox = workspace.SmallBoxForNpc:Clone()
+	CloneOfBox.Parent = workspace.Noob
+	CloneOfBox.CanCollide = false
+	
+	local BoxAttachment = Instance.new("Attachment")
+	BoxAttachment.Parent = CloneOfBox
+	
+	local npcTorsoAttachment = Npc.Torso.BoxAttachment
+	CloneOfBox.Position = Npc.HumanoidRootPart.Position
+	
+	local BoxAndNpcAling = Instance.new("AlignPosition")
+	BoxAndNpcAling.Parent = CloneOfBox
+	BoxAndNpcAling.Attachment0 = BoxAttachment
+	BoxAndNpcAling.Attachment1 = npcTorsoAttachment
+	BoxAndNpcAling.ReactionForceEnabled = true
+	
+end
+
+local function destroyBox()
+	for _, v in pairs(Npc:GetDescendants()) do
+		if v.Name == "SmallBoxForNpc" then
+			v:Destroy()
+		end
+	end
+end
+
+local function spawnCar()
+	Car:SetPrimaryPartCFrame(CarSpawner.CFrame)
+end
+
+local spawnedBoxes = {}
+
+local function spawnBox() 
+	local BoxSpawners = Map.BoxSpawners
+	local spawned = false
+
+	local spawnerTable = {}
+	for _, v in pairs(BoxSpawners:GetDescendants()) do
+		if v:IsA("Part") and v.Name ~= "BoxesShipment" and v.isBusy.Value == false then
+			table.insert(spawnerTable, v)
+		end
+	end
+
+	if #spawnerTable > 0 then
+		local randomIndex = math.random(1, #spawnerTable)
+		local chosenSpawner = spawnerTable[randomIndex]
+
+		local CloneOfBox = Box:Clone()
+		CloneOfBox.Parent = workspace.Map.Boxes    
+		CloneOfBox.Position = chosenSpawner.Position
+		CloneOfBox.Anchored = true
+		CloneOfBox.CFrame = CloneOfBox.CFrame * CFrame.new(0, 2, 0)
+
+		chosenSpawner.isBusy.Value = true
+		table.insert(spawnedBoxes, CloneOfBox)
+		spawned = true
+	else
+		print("No available spawners, trying again later.")
+	end
+end
+
+local function removeBoxes()
+	for i, v in ipairs(spawnedBoxes) do
+		v:Destroy()
+	end
+	for _, v in pairs(Map.BoxSpawners:GetDescendants()) do
+		if v:IsA("Part") then
+			local isBusyValue = v:FindFirstChild("isBusy")
+			if isBusyValue then
+				isBusyValue.Value = false
+			end
+		end
+	end
+end
+
+local function spawnBoxPeriodically()
+	while wait(3) do
+		spawnBox()
+	end
+end
+
+local function moveCar()
+	spawn(function()
+		spawnBoxPeriodically()
+	end)
+
+	while wait(1) do
+		spawnCar()
+
+		while (CarPrimaryPart.Position - Destination.Position).Magnitude > 5 do
+			local direction = -CarPrimaryPart.CFrame.LookVector
+			Car:SetPrimaryPartCFrame(CarPrimaryPart.CFrame + direction * Speed * 0.1)
+			wait(0.01)
+		end
+
+		walkTo(IndoorPart, "Default")
+		walkTo(BoxShipment, "Default")
+		removeBoxes()
+		spawnBoxInNpc()
+		walkTo(OutDoorPart, "WalkWithBox")
+		walkTo(CarShipment, "PutInTheCar")
+		destroyBox()
+		OpenDoorCarShipment(true)
+		wait(2)
+		closeCarDoor()
+		walkTo(Car.Shipment2, "Default")
+		wait(1)
+		walkTo(OutDoorPart, "Default")
+		wait(5)
+		while (CarPrimaryPart.Position - Destination2.Position).Magnitude > 100 do
+			local direction = -CarPrimaryPart.CFrame.LookVector
+			Car:SetPrimaryPartCFrame(CarPrimaryPart.CFrame + direction * Speed * 0.1)
+			wait(0.01)
+		end
+	end
+end
+
+spawn(function()
+	moveCar()
+end)
+
+CarModule.OnServerInvoke = function (player, value)
+	if value then
+		for _, v in ipairs(Trucks) do
+			if v.name == value then
+				return v.carImage
+			end
+		end
+	else
+		local PlayerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+		local CurrentCar = PlayerData:FindFirstChild("CurrentCar").Value
+		local MaxDelivery = PlayerData:FindFirstChild("MaxDelivery").Value
+
+		for _, v in ipairs(Trucks) do
+			if v.name == CurrentCar then
+				return MaxDelivery, v.carImage
+			end
+		end
+	end
+end
+
+game.ReplicatedStorage.GetPlayerCar.OnServerInvoke = function(player)
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	local car = playerData:FindFirstChild("CurrentCar")
+	return car.Value
+end
