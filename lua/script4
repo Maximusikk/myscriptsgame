@@ -1,0 +1,222 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local remoteEvent = Instance.new("RemoteEvent")
+remoteEvent.Name = "PlaceObjectEvent"
+remoteEvent.Parent = ReplicatedStorage
+local removeEvent = Instance.new("RemoteEvent")
+removeEvent.Name = "removeEvent"
+removeEvent.Parent = ReplicatedStorage
+
+local PlacementEvent = game.ReplicatedStorage.PlacementEvent
+
+local ListOfAcceptedItems = {"BasePlate"}
+
+local platform
+local chairTemplate = workspace:WaitForChild("Chair")
+local tableTemplate = workspace:WaitForChild("Table")
+
+local WallX3Template = workspace:WaitForChild("WallX3")
+local WallX9Template = workspace:WaitForChild("WallX9")
+
+local SodaFountainTemplate = workspace:WaitForChild("SodaFountain")
+local MakerTableTamplate = workspace:WaitForChild("MakerTable")
+
+local FrenchFryerTemplate = workspace:WaitForChild("FrenchFryer")
+
+local RenameChairFromTycoon = game.ReplicatedStorage.NewObjectEvent
+local UpdateBuildablesEvent = game.ReplicatedStorage.UpdateBuildables
+
+local function createObjectOnServer(player, position, objectType, rotationAngle, platform)
+	local newObject
+	local PlayerTycoon
+	warn(objectType)
+	for i,v in pairs(workspace:GetDescendants()) do
+		if v.Name == "Tycoon" and v.Owner.Value == tostring(player) then
+			PlayerTycoon = v
+		end
+	end
+	if tostring(objectType) == "Chair" then
+		newObject = chairTemplate:Clone()
+		print("created chair")
+		newObject.Parent = PlayerTycoon 
+	end
+	if objectType == "WallX3" then
+		newObject = WallX3Template:Clone()
+		print("created wall x3")
+		newObject.Parent = PlayerTycoon 
+	end
+	if objectType == "WallX9" then
+		newObject = WallX9Template:Clone()
+		print("created WallX9")
+		newObject.Parent = PlayerTycoon 
+	end
+	if objectType == "FrenchFryer" then
+		newObject = FrenchFryerTemplate:Clone()
+		print("created Frenmch")
+		newObject.Parent = PlayerTycoon
+	end
+	if objectType == "Table" then
+		newObject = tableTemplate:Clone()
+		newObject.PrimaryPart = newObject:FindFirstChild("RootPart") or newObject:FindFirstChildOfClass("BasePart")
+		newObject.Parent = PlayerTycoon
+		local chairValue = Instance.new("IntValue")
+		chairValue.Name = "ChairsQuantity"
+		chairValue.Parent = newObject
+		local tableId = Instance.new("IntValue")
+		tableId.Name = "TableId"
+		tableId.Parent = newObject
+		print("created table")
+	end
+	if objectType == "MakerTable" then
+		newObject = MakerTableTamplate:Clone()
+		newObject.PrimaryPart = newObject:FindFirstChild("RootPart") or newObject:FindFirstChildOfClass("BasePart")
+		newObject.Parent = PlayerTycoon
+		warn("created maker tabled")
+	end
+	if objectType == "SodaFountain" then
+		newObject = SodaFountainTemplate:Clone()
+		newObject.PrimaryPart = newObject:FindFirstChild("RootPart") or newObject:FindFirstChildOfClass("BasePart")
+		newObject.Parent = PlayerTycoon
+		warn("created maker tabled")
+	end
+	local primaryPart = newObject.PrimaryPart or newObject:FindFirstChildOfClass("BasePart")
+
+	if not primaryPart then
+		warn("У модели Chair нет PrimaryPart или BasePart.")
+		return
+	end
+	local modelCFrame, modelSize = newObject:GetBoundingBox()
+
+	local hitboxSize = modelSize + Vector3.new(0.1, 0.1, 0.1)
+
+	local hitbox = Instance.new("Part")
+	hitbox.Name = "HitBox"
+	hitbox.Size = hitboxSize
+	hitbox.CFrame = modelCFrame
+	hitbox.Anchored = true
+	hitbox.CanCollide = false 
+	hitbox.Transparency = 1 
+	hitbox.Parent = newObject
+
+	print("Хитбокс для модели Chair успешно создан.")
+	if newObject then
+			if objectType == "FrenchFryer" then
+				print("placed and raised pos for FrenchFryer")
+				local raisedPosition = position + Vector3.new(0, 3.8, 0)
+				local rotationInRadians = math.rad(rotationAngle)
+				local newCFrame = CFrame.new(raisedPosition) * CFrame.Angles(0, rotationInRadians, 0)
+
+				newObject.PrimaryPart = newObject:FindFirstChild("RootPart")
+				if newObject.PrimaryPart then	
+					newObject:SetPrimaryPartCFrame(newCFrame)
+				else
+					warn("FrenchFryrer does not have a PrimaryPart!")
+				end
+			end
+			if objectType == "MakerTable" then
+				print("placed and raised pos for FrenchFryer")
+				local raisedPosition = position + Vector3.new(0, 3.5, 0)
+				local rotationInRadians = math.rad(rotationAngle)
+				local newCFrame = CFrame.new(raisedPosition) * CFrame.Angles(0, rotationInRadians, 0)
+
+				newObject.PrimaryPart = newObject:FindFirstChild("RootPart")
+				if newObject.PrimaryPart then	
+					newObject:SetPrimaryPartCFrame(newCFrame)
+				else
+					warn("FrenchFryrer does not have a PrimaryPart!")
+				end
+			end
+		if objectType == "SodaFountain" then
+			print("placed and raised pos for FrenchFryer")
+			local raisedPosition = position + Vector3.new(0, 5.2, 0)
+			local rotationInRadians = math.rad(rotationAngle)
+			local newCFrame = CFrame.new(raisedPosition) * CFrame.Angles(0, rotationInRadians, 0)
+
+			newObject.PrimaryPart = newObject:FindFirstChild("RootPart")
+			if newObject.PrimaryPart then	
+				newObject:SetPrimaryPartCFrame(newCFrame)
+			else
+				warn("FrenchFryrer does not have a PrimaryPart!")
+			end
+		end
+			if objectType == "WallX3" then
+				local raisedPosition = position + Vector3.new(0, 7.5, 0)
+				local rotationInRadians = math.rad(rotationAngle)
+				local newCFrame = CFrame.new(raisedPosition) * CFrame.Angles(0, rotationInRadians, 0)
+
+				newObject.PrimaryPart = newObject:FindFirstChild("WallX3")
+				if newObject.PrimaryPart then
+					newObject:SetPrimaryPartCFrame(newCFrame)
+				else
+					warn("WallX3 does not have a PrimaryPart!")
+				end
+			end
+
+		if objectType == "WallX9" then
+			local raisedPosition = position + Vector3.new(0, 7.5, 0)
+			local rotationInRadians = math.rad(rotationAngle)
+			local newCFrame = CFrame.new(raisedPosition) * CFrame.Angles(0, rotationInRadians, 0)
+
+			newObject.PrimaryPart = newObject:FindFirstChild("WallX9") 
+			newObject:SetPrimaryPartCFrame(newCFrame)
+
+			if newObject.PrimaryPart then
+				local TouchingParts = newObject.PrimaryPart:GetTouchingParts()
+
+				local canPlace = true  
+
+				for i, v in pairs(TouchingParts) do
+					if v.Name ~= "Baseplate" then
+						print("Touching another WallX9. Placement denied.")
+						print(v.Name)
+						canPlace = false  
+						break  
+					end
+				end
+
+
+				if canPlace then
+					PlacementEvent:Fire("Succ")
+					print("Placement successful.")
+				else
+					print("Placement denied due to collision.")
+					PlacementEvent:Fire("Err")
+					newObject:Destroy()
+				end
+			else
+				warn("WallX9 does not have a PrimaryPart!")
+			end
+		end
+
+		if objectType == "Chair" or objectType == "Table" then
+			print("Changed positin for table or a chair")
+			local raisedPosition = position + Vector3.new(0, 2.3, 0)
+			local rotationInRadians = math.rad(rotationAngle)
+			local newCFrame = CFrame.new(raisedPosition) * CFrame.Angles(0, rotationInRadians, 0)
+			newObject:SetPrimaryPartCFrame(newCFrame)
+		end
+	end
+	for _, part in pairs(newObject:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = true
+			part.CanQuery = true
+			part.Anchored = true
+		end
+	end
+	RenameChairFromTycoon:Fire(player, objectType, position, newObject)
+	UpdateBuildablesEvent:Fire(player)
+end
+
+remoteEvent.OnServerEvent:Connect(function(player, position, objectType, rotationAngle)
+	createObjectOnServer(player, position, objectType, rotationAngle)
+end)
+removeEvent.OnServerEvent:Connect(function(player, target)
+	local parentModel = target:FindFirstAncestorOfClass("Model") 
+
+	if target.Name == "HitBox" then
+		parentModel:Destroy() 
+		UpdateBuildablesEvent:Fire(player)
+		print("Объект удален:", parentModel.Name)
+	else
+		print("Целевой объект не является разрешенной моделью")
+	end
+end)
