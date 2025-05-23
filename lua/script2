@@ -1,0 +1,551 @@
+local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+----------------- datastore -------------------
+
+local DataStoreService = game:GetService("DataStoreService")
+local BarnsDataStore = DataStoreService:GetDataStore("BarnsDataV1") 
+local PlayerDataStore = DataStoreService:GetDataStore("PlayerDataV1")
+
+------------------------------------------------
+
+local BuyEvent = ReplicatedStorage:WaitForChild("BuyBarn")
+local UpdateCashEvent = game.ReplicatedStorage.UpdateCashEvent
+local TotalEarnedEvent = game.ReplicatedStorage.TotalEarned
+
+local SyncBarnsEvent = game.ReplicatedStorage.SyncBarns
+local GetPlayerBarns = game.ReplicatedStorage.GetPlayerBarns
+
+local GetWool = game.ReplicatedStorage.GetWool
+
+local RebirthEvent = game.ReplicatedStorage.Rebirth
+
+local BuyUpgradablesEvent = game.ReplicatedStorage.BuyUpgradables
+local MakeUpgrade = game.ReplicatedStorage.MakeUpgrade
+
+local RequestSheepCount = game.ReplicatedStorage.RequestSheepSpawn
+
+local UpgradeTruckEvent = game.ReplicatedStorage.UpdateTuck
+
+local Err = "Err"
+
+local Barns = {
+	[1] = {Cost = 300, ModelName = "LowBarn"},
+	[2] = {Cost = 1500, ModelName = "MediumBarn"},
+	[3] = {Cost = 5000, ModelName = "HighBarn"},
+	[4] = {Cost = 15000, ModelName = "StoneBarn"},
+	[5] = {Cost = 75000, ModelName = "MetalStoneBarn"},
+}
+
+local Trucks = {
+	[1] = {name = "LightCar", MaxDelivery = 200},
+	[2] = {name = "MiniCargoVan", cost = 1500, MaxDelivery = 500},
+	[3]	= {name = "MediumCargoVan", cost = 5000, MaxDelivery = 1500},
+	[4] = {name = "HighCargoVan", cost = 10000, MaxDelivery = 2500}
+}
+
+local rebirths = {
+	[0] = {Rebirths = 0, Wool = "Default"},
+	[1] = {Rebirths = 1, Wool = "Golden", Earnings = 10}
+}
+
+local barnSpawner = {
+	[1] = {spawner = "BarnSpawnerOne", num = 1},
+	[2] = {spawner = "BarnSpawnerTwo", num = 2},
+	[3] = {spawner = "BarnSpawnerThree", num = 3},
+	[4] = {spawner = "BarnSpawnerFour", num = 4}
+}
+
+local function updateCash(player, amount)
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	if playerData then
+		local cash = playerData:FindFirstChild("Cash")
+		if cash then
+			UpdateCashEvent:FireClient(player, cash.Value)
+		end
+	end
+end
+
+local function cashHeartBeat(player)
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	if playerData then
+		local cash = playerData:FindFirstChild("Cash")
+		local TotalEarned = playerData:FindFirstChild("TotalEarned")
+		TotalEarnedEvent:FireClient(player, TotalEarned.Value)
+		if cash and TotalEarned then
+			cash.Changed:Connect(function(newValue)
+				UpdateCashEvent:FireClient(player, newValue)
+			end)
+			TotalEarned.Changed:Connect(function(newValue)
+				TotalEarnedEvent:FireClient(player, newValue)
+			end)
+		end
+	end
+end
+
+
+local function placeBarn(ModelName, spawner, SheepCount)
+	local SpawnerModel
+	if string.find(spawner, "BarnSpawner%s*") then
+		SpawnerModel = workspace:FindFirstChild(spawner)
+	else
+		SpawnerModel = workspace:FindFirstChild("BarnSpawner" .. spawner)
+	end
+	
+	for _, v in pairs(workspace:GetDescendants()) do
+		if v.Name == "Spawner" and v:IsA("StringValue") and v.Value == "BarnSpawner" .. spawner then
+			v.Parent:Destroy()
+		end
+	end
+	local Model = ReplicatedStorage:FindFirstChild(ModelName)
+	local CloneOfModel = Model:Clone() 
+	CloneOfModel.Parent = workspace.BarnsFolder
+	CloneOfModel:SetPrimaryPartCFrame(SpawnerModel.CFrame)
+	CloneOfModel.Spawner.Value = SpawnerModel.Name
+	if SheepCount then
+		CloneOfModel.SheepCount.Value = SheepCount
+	end
+end
+
+local function savePlayerBarns(player)
+	local barnsDataToSave = {}
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	for _, v in pairs(game.Workspace.BarnsFolder:GetDescendants()) do
+		if v:IsA("Model") then
+			for _, b in ipairs(Barns) do
+				if v.Name == b.ModelName and v:FindFirstChild("Spawner") then
+					local spawnerValue = v.Spawner.Value
+					if spawnerValue and spawnerValue ~= "" then
+						table.insert(barnsDataToSave, {
+							Name = v.Name,
+							Spawner = spawnerValue,
+							SheepCount = v.SheepCount.Value
+						})
+					else
+						warn(v.Name .. "barn doesn't have spawner property")
+					end
+				end
+
+			end
+		end
+	end
+
+	local success, err = pcall(function()
+		BarnsDataStore:SetAsync(player.UserId .. "_Barns", barnsDataToSave)
+	end)
+
+	if not success then
+		warn("Error to save player's barns " .. player.Name .. ": " .. tostring(err))
+	end
+end
+
+local function resetPlayerBarns(player)
+	local barnsDataToSave = {}
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	for _, v in pairs(game.Workspace.BarnsFolder:GetDescendants()) do
+		if v:IsA("Model") then
+			for _, b in ipairs(Barns) do
+				if v.Name == b.ModelName and v:FindFirstChild("Spawner") then
+					local spawnerValue = v.Spawner.Value
+					if spawnerValue and spawnerValue ~= "" then
+						table.insert(barnsDataToSave, {
+							Name = v.Name,
+							Spawner = spawnerValue,
+							SheepCount = 0
+						})
+					else
+						warn(v.Name .. "barn doesn't have spawner property")
+					end
+				end
+
+			end
+		end
+	end
+
+	local success, err = pcall(function()
+		BarnsDataStore:SetAsync(player.UserId .. "_Barns", barnsDataToSave)
+	end)
+
+	if not success then
+		warn("Error to save player's barns " .. player.Name .. ": " .. tostring(err))
+	end
+end
+
+local function loadPlayerBarns(player)
+	local barnsData = {}
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	local SheepsCount = 0
+	local success, data = pcall(function()
+		return BarnsDataStore:GetAsync(player.UserId .. "_Barns")
+	end)
+
+	if success and data then
+		barnsData = data
+	else
+		warn("LOAD BARNS ERROR" .. player.Name)
+	end
+
+	for _, barn in ipairs(barnsData) do
+		placeBarn(barn.Name, barn.Spawner, barn.SheepCount)
+		SheepsCount = SheepsCount + barn.SheepCount
+	end
+	playerData.SheepCount.Value = SheepsCount
+end
+
+local function requestSheepHeartBeat(player)
+	game.Workspace.ChildAdded:Connect(function(child)
+		if child.Name == "Rig" and child:FindFirstChild("Owner") and child.Owner.Value == player.Name then
+			local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+			playerData.SheepCount.Value = playerData.SheepCount.Value + 1 
+		end
+	end)
+end
+
+BuyEvent.OnServerInvoke = function(player, barnType, spawner)
+	local barnData = Barns[barnType]
+	if not barnData then print("no data") return end
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	local PreviousBarnSheeps = 0
+	local found = false
+
+	if playerData then
+		local cash = playerData:FindFirstChild("Cash")
+		if cash and cash.Value >= barnData.Cost then
+			cash.Value = cash.Value - barnData.Cost
+
+			for _, v in pairs(workspace.BarnsFolder:GetDescendants()) do
+				if v:IsA("Model") then
+					local spawnerObj = v:FindFirstChild("Spawner")
+					if spawnerObj and spawnerObj:IsA("StringValue") then
+						if string.find(spawnerObj.Value, spawner) then
+							local sheepCountObj = v:FindFirstChild("SheepCount")
+							if sheepCountObj then
+								PreviousBarnSheeps = sheepCountObj.Value
+							end
+							placeBarn(barnData.ModelName, spawner, PreviousBarnSheeps)
+							print(player.Name .. " купил " .. barnData.ModelName .. " за " .. barnData.Cost)
+							updateCash(player, cash.Value)
+							found = true 
+							return
+						end
+					end
+				end
+			end
+
+			if not found then
+				placeBarn(barnData.ModelName, spawner, PreviousBarnSheeps)
+				print(player.Name .. " купил " .. barnData.ModelName .. " за " .. barnData.Cost .. " (новый амбар)")
+				updateCash(player, cash.Value)
+			end
+		else
+			print(player.Name .. " не хватает денег на " .. barnData.ModelName)
+			return Err
+		end
+	end
+end
+
+UpgradeTruckEvent.OnServerInvoke = function(player, truck)
+	print(player, truck)
+	for _, v in ipairs(Trucks) do
+		if v.name == truck then	
+			local PlayerData = game.ServerStorage:FindFirstChild(player.UserId .. "_Data")
+			local Cash = PlayerData.Cash.Value
+			
+			if Cash >= v.cost then
+				PlayerData.CurrentCar.Value = v.name
+				PlayerData.MaxDelivery.Value = v.MaxDelivery
+				PlayerData.Cash.Value = PlayerData.Cash.Value - v.cost
+				return true
+			else
+				return false
+			end
+		end
+	end
+end
+
+GetWool.OnServerInvoke = function(player)
+	local playerData = game.ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	local CurrentWool = playerData.CurrentWool.Value
+	return CurrentWool
+end
+
+RebirthEvent.OnServerInvoke = function(player)
+	local playerData = game.ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	local Earned = playerData.TotalEarned
+	local Rebirths = playerData.PlayerRebirths
+	local PlayerCash = playerData.Cash
+	
+	local CurrentWool
+	local needToEarn
+	
+	for _, v in ipairs(rebirths) do
+		if Rebirths.Value + 1 == v.Rebirths then
+			needToEarn = v.Earnings
+			print(needToEarn)
+		end
+	end
+
+	if Earned.Value >= needToEarn then
+		Rebirths.Value = Rebirths.Value + 1
+		PlayerCash.Value = 0
+		Earned.Value = 0
+	end
+	
+	local PlayerCurrentWool = playerData.CurrentWool
+	for _, v in ipairs(rebirths) do
+		if Rebirths.Value == v.Rebirths then
+			CurrentWool = v.Wool
+			PlayerCurrentWool.Value = v.Wool 
+			GetWool:InvokeClient(player, CurrentWool)
+		end
+	end
+		
+	return "no"
+end
+
+GetPlayerBarns.OnServerInvoke = function(player)
+	local barnsData = {}
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	local SheepsCount = 0
+	local success, data = pcall(function()
+		return BarnsDataStore:GetAsync(player.UserId .. "_Barns")
+	end)
+
+	if success and data then
+		barnsData = data
+	else
+		warn("LOAD BARNS ERROR" .. player.Name)
+	end
+
+	return data
+end
+
+
+local function updateMaxDelivery(player)
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	local CurrentCar = playerData:FindFirstChild("CurrentCar")
+	CurrentCar:GetPropertyChangedSignal("Value"):Connect(function(value)
+		for _, v in ipairs(Trucks) do
+			if v.name == CurrentCar.Value then
+				playerData.MaxDelivery.Value = v.MaxDelivery
+			end
+		end
+	end)
+end
+
+local function sheepCountHeartBeat(player)
+	local playerData = game.ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	if playerData and playerData:FindFirstChild("SheepCount") then
+		local SheepCount = playerData.SheepCount
+		RequestSheepCount:InvokeClient(player, SheepCount.Value)
+
+		SheepCount.Changed:Connect(function(newValue)
+			RequestSheepCount:InvokeClient(player, newValue)
+		end)
+
+		return SheepCount.Value
+	else
+		return 0
+	end
+end
+
+local function savePlayerData(player)
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+
+	if playerData then
+		local cash = playerData:FindFirstChild("Cash")
+		local currentWool = playerData:FindFirstChild("CurrentWool")
+		local rebirths = playerData:FindFirstChild("PlayerRebirths")
+		local totalEarned = playerData:FindFirstChild("TotalEarned")
+		local CurrentCar = playerData:FindFirstChild("CurrentCar")
+		
+		if cash and currentWool and rebirths and totalEarned then
+			local playerDataToSave = {
+				Cash = cash.Value,
+				CurrentWool = currentWool.Value,
+				PlayerRebirths = rebirths.Value,
+				TotalEarned = totalEarned.Value,
+				CurrentCar = CurrentCar.Value
+			}
+
+			local success, errorMessage = pcall(function()
+				PlayerDataStore:SetAsync(player.UserId, playerDataToSave)
+			end)
+
+			if success then
+				print("Data saved successfully for player:", player.Name)
+			else
+				warn("Error saving data for player:", player.Name, errorMessage)
+			end
+		else
+			warn("Player data is incomplete, unable to save.")
+		end
+	end
+end
+
+local function resetPlayerData(player)
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+
+
+	if playerData then
+		local cash = playerData:FindFirstChild("Cash")
+		local currentWool = playerData:FindFirstChild("CurrentWool")
+		local rebirths = playerData:FindFirstChild("PlayerRebirths")
+		local totalEarned = playerData:FindFirstChild("TotalEarned")
+		local CurrentCar = playerData:FindFirstChild("CurrentCar")
+
+		if cash and currentWool and rebirths and totalEarned then
+			local playerDataToSave = {
+				Cash = nil,
+				CurrentWool = nil,
+				PlayerRebirths = nil,
+				TotalEarned = nil,
+				CurrentCar = nil
+			}
+
+			local success, errorMessage = pcall(function()
+				PlayerDataStore:SetAsync(player.UserId, playerDataToSave)
+			end)
+
+			if success then
+				print("Data reseted successfully for player:", player.Name)
+			else
+				warn("Error saving data for player:", player.Name, errorMessage)
+			end
+		else
+			warn("Player data is incomplete, unable to save.")
+		end
+	end
+end
+
+local function LoadMaxDelivery(player, car)
+	local PlayerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+	local MaxDelivery
+	for _, v in ipairs(Trucks) do
+		if v.name == car then
+			return v.MaxDelivery
+		end
+	end
+end
+
+local function loadPlayerData(player)
+	local playerData = ServerStorage:FindFirstChild(player.UserId .. "_Data")
+
+	if playerData then
+		local success, savedData = pcall(function()
+			return PlayerDataStore:GetAsync(player.UserId)
+		end)
+
+		if success and savedData then
+			playerData:FindFirstChild("Cash").Value = savedData.Cash or 300
+			playerData:FindFirstChild("CurrentWool").Value = savedData.CurrentWool or "Default"
+			playerData:FindFirstChild("PlayerRebirths").Value = savedData.PlayerRebirths or 0
+			playerData:FindFirstChild("TotalEarned").Value = savedData.TotalEarned or 0
+			playerData:FindFirstChild("CurrentCar").Value = savedData.CurrentCar or "LightCar"
+			playerData:FindFirstChild("MaxDelivery").Value = LoadMaxDelivery(player, playerData:FindFirstChild("CurrentCar").Value)
+			print("Data loaded successfully for player:", player.Name)
+		else
+			print("No saved data found for player:", player.Name, "Setting default values.")
+			playerData:FindFirstChild("Cash").Value = 300
+			playerData:FindFirstChild("CurrentWool").Value = "Default"
+			playerData:FindFirstChild("PlayerRebirths").Value = 0
+			playerData:FindFirstChild("TotalEarned").Value = 0
+			playerData:FindFirstChild("CurrentCar").Value = "LightCar"
+		end
+	end
+end
+
+local function loadPlayerUpgrades()
+	
+end
+
+local function onPlayerAdded(player)
+	local playerData = Instance.new("Folder")
+	playerData.Name = player.UserId .. "_Data"
+	playerData.Parent = ServerStorage
+	
+	local upgradesFolder = Instance.new("Folder")
+	upgradesFolder.Name = "Upgrades"
+	upgradesFolder.Parent = playerData
+	
+	local clickerFolder = Instance.new("Folder")
+	clickerFolder.Name = "Clicker"
+	clickerFolder.Parent = playerData
+	
+	local CurrentClicks = Instance.new("IntValue")
+	CurrentClicks.Name = "CurrentClicks"
+	CurrentClicks.Parent = clickerFolder
+	
+	local refilTime = Instance.new("IntValue")
+	refilTime.Name = "RefillTime"
+	refilTime.Parent = clickerFolder
+	
+	local MaxClicks = Instance.new("IntValue")
+	MaxClicks.Name = "MaxClicks"
+	MaxClicks.Parent = clickerFolder
+	
+	local RefillCount = Instance.new("IntValue")
+	RefillCount.Name = "NumPerRefill"
+	RefillCount.Parent = clickerFolder
+
+
+	local cash = Instance.new("IntValue")
+	cash.Name = "Cash"
+	cash.Value = 300 
+	cash.Parent = playerData
+
+	local totalEarned = Instance.new("IntValue")
+	totalEarned.Name = "TotalEarned"
+	totalEarned.Value = 0
+	totalEarned.Parent = playerData
+
+	local currentWool = Instance.new("StringValue")
+	currentWool.Name = "CurrentWool"
+	currentWool.Value = "Default"
+	currentWool.Parent = playerData
+
+	local rebirths = Instance.new("IntValue")
+	rebirths.Name = "PlayerRebirths"
+	rebirths.Value = 0 
+	rebirths.Parent = playerData
+
+	local sheepCount = Instance.new("IntValue")
+	sheepCount.Name = "SheepCount"
+	sheepCount.Value = 0 
+	sheepCount.Parent = playerData
+	
+	local CurrentCar = Instance.new("StringValue")
+	CurrentCar.Name = "CurrentCar"
+	CurrentCar.Value = "LightCar"
+	CurrentCar.Parent = playerData
+	
+	local MaxDelivery = Instance.new("IntValue")
+	MaxDelivery.Value = 0
+	MaxDelivery.Name = "MaxDelivery"
+	MaxDelivery.Parent = playerData
+
+	loadPlayerData(player)
+
+	UpdateCashEvent:FireClient(player, cash.Value)
+
+	cashHeartBeat(player)
+	requestSheepHeartBeat(player)
+	loadPlayerBarns(player)
+	sheepCountHeartBeat(player)
+	updateMaxDelivery(player)
+
+end
+
+local function playerDisconnected(player)
+	print(player.Name)
+	savePlayerBarns(player)
+	savePlayerData(player)
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(playerDisconnected)
+
+game.ReplicatedStorage.ResetPlayerStats.OnServerInvoke = function(player)
+	resetPlayerBarns(player)
+end
