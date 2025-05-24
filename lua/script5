@@ -1,0 +1,212 @@
+local npc = script.Parent
+local humanoid = npc.Humanoid
+local PrimaryPart = npc.PrimaryPart
+local ClickDetector = npc.Parent.Walk
+local Book = game.Workspace.BookToRead
+
+local WalkAnim = script.Parent.WalkAnim  
+local SitAnim = script.Parent.SitAnim
+local ReadAnim = script.Parent.ReadingToOrder
+
+local humanoidRootPart = npc:WaitForChild("HumanoidRootPart")
+
+local PathFind = game:GetService("PathfindingService")
+
+local ReplicatedStorage = game.ReplicatedStorage
+
+local tycoonFinderScipt = game.ReplicatedStorage.TycoonFinder
+
+local walkAnimation = humanoid:LoadAnimation(WalkAnim)
+local sitAnimation = humanoid:LoadAnimation(SitAnim)
+local ReadingAnimation = humanoid:LoadAnimation(ReadAnim)
+
+local owner = script.Parent.Parent.Owner.Value
+
+function goToChair(chair)
+	walkAnimation:Play()
+
+	local path = PathFind:CreatePath()
+	path:ComputeAsync(PrimaryPart.Position, chair.Position)
+	local waypoints = path:GetWaypoints()
+
+	for _, waypoint in ipairs(waypoints) do
+		humanoid:MoveTo(waypoint.Position)
+		humanoid.MoveToFinished:Wait()
+
+		local Magnitude = (npc.HumanoidRootPart.Position - chair.Position).Magnitude
+
+		if Magnitude < 10 then
+			print("finished")
+			break
+		end
+	end
+
+	walkAnimation:Stop()
+end
+
+function getChair()
+	local chair
+
+	for _, i in pairs(game.Workspace:GetDescendants()) do
+		if i.Name == "tableForSolo" then
+			for _, v in pairs(i:GetDescendants()) do
+				if v.Name == "RootPart"  then
+					for _, n in pairs(v:GetDescendants()) do
+						print(n.Name)
+						if n.Name == "isOccupied" and n.Value == false then
+							print("occupied finded")
+							chair = v
+
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return chair
+end
+function makeOrder(owner, tableId, npc, state)
+	if not npc then
+		warn("NPC is nil, cannot create order.")
+		return
+	end
+
+	local orderItems = {"burger"}
+	local selectedItems = {}
+
+	for i = 1, 1 do
+		local randomIndex = math.random(1, #orderItems)
+		table.insert(selectedItems, orderItems[randomIndex])
+	end
+
+	local order = Instance.new("Folder")
+	order.Name = "Order_" .. tostring(math.random(1000, 9999))  
+	order.Parent = ReplicatedStorage.Orders
+
+	local tableIdValue = Instance.new("StringValue")
+	tableIdValue.Name = "TableId"
+	tableIdValue.Value = tostring(tableId)
+	tableIdValue.Parent = order
+
+	for i, item in ipairs(selectedItems) do
+		local itemValue = Instance.new("StringValue")
+		itemValue.Name = "Item_" .. i
+		itemValue.Value = item
+		itemValue.Parent = order
+	end
+
+	local OrderState = Instance.new("StringValue")
+	OrderState.Name = "OrderState"
+	OrderState.Value = tostring(state)
+	OrderState.Parent = order
+
+	local npcReference = Instance.new("ObjectValue")
+	npcReference.Name = "NpcReference"
+	npcReference.Value = npc
+	npcReference.Parent = order
+
+	print("Order created for Table:", tableId, "Items:", table.concat(selectedItems, ", "))
+end
+
+
+
+local function showOrderAboveNPC(orderItems)
+	local existingGui = humanoidRootPart:FindFirstChild("OrderGui")
+	if existingGui then
+		existingGui:Destroy()
+	end
+
+	local orderGui = Instance.new("BillboardGui")
+	orderGui.Name = "OrderGui"
+	orderGui.Size = UDim2.new(4, 0, 4, 0)  
+	orderGui.StudsOffset = Vector3.new(0, 5, 0)  
+	orderGui.Adornee = humanoidRootPart 
+	orderGui.Parent = humanoidRootPart
+
+	local bubbleBackground = Instance.new("ImageLabel")
+	bubbleBackground.Size = UDim2.new(1, 0, 1, 0)
+	bubbleBackground.BackgroundTransparency = 1
+	bubbleBackground.Image = "rbxassetid://135013342507569"  
+	bubbleBackground.Parent = orderGui
+
+	local textLabel = Instance.new("TextLabel")
+	textLabel.Size = UDim2.new(0.8, 0, 0.6, 0)  
+	textLabel.Position = UDim2.new(0.1, 0, 0.2, 0)  
+	textLabel.BackgroundTransparency = 1
+	textLabel.Text = table.concat(orderItems, "\n")  
+	textLabel.TextColor3 = Color3.new(0, 0, 0)
+	textLabel.TextWrapped = true 
+	textLabel.TextScaled = true  
+	textLabel.Parent = bubbleBackground
+
+	local textSizeConstraintOrder = Instance.new("UITextSizeConstraint")
+	textSizeConstraintOrder.MaxTextSize = 5 
+	textSizeConstraintOrder.Parent = textLabel
+
+	local waitingLabel = Instance.new("TextLabel")
+	waitingLabel.Size = UDim2.new(0.8, 0, 0.2, 0)  
+	waitingLabel.Position = UDim2.new(0.1, 0, 0, 0)  
+	waitingLabel.BackgroundTransparency = 1
+	waitingLabel.Text = ""
+	waitingLabel.TextColor3 = Color3.new(1, 0, 0) 
+	waitingLabel.TextScaled = true  
+	waitingLabel.TextWrapped = true 
+	waitingLabel.TextXAlignment = Enum.TextXAlignment.Center  
+	waitingLabel.TextYAlignment = Enum.TextYAlignment.Center  
+	waitingLabel.Parent = bubbleBackground
+
+	local textSizeConstraintWaiting = Instance.new("UITextSizeConstraint")
+	textSizeConstraintWaiting.MaxTextSize = 10
+	textSizeConstraintWaiting.MinTextSize = 4  
+	textSizeConstraintWaiting.Parent = waitingLabel
+
+
+	local haveOrderValue = Instance.new("BoolValue")
+	haveOrderValue.Value = false
+	haveOrderValue.Parent = script.Parent
+	haveOrderValue.Name = "isHaveOrder"
+
+	npc.RemoveOrder.Destroying:Connect(function()
+		haveOrderValue:Destroy()
+		waitingLabel.Text = "Waiting:" 
+	end)
+	npc.GetOrder.Destroying:Connect(function()
+		orderGui:Destroy()
+	end)
+end
+
+local orderItems = {"Burger"}
+
+
+ClickDetector.MouseClick:Connect(function(player)
+	local Chair = getChair()
+	if Chair == nil then
+		game.ReplicatedStorage.ThrowError:FireAllClients("chair is nil")
+	else
+		Chair.isOccupied.Value = true
+
+		goToChair(Chair)
+		local rightHand = npc:FindFirstChild("Torso")
+		sitAnimation:Play()
+		Chair.Seat:Sit(humanoid)
+		local TableId = Chair.Parent.Parent.TableId.Value
+		local BookClone = Book:Clone()
+
+		if rightHand then
+			local torsoCFrame = rightHand.CFrame
+			local offset = Vector3.new(0, 0, -2) 
+
+			BookClone.CFrame = torsoCFrame * CFrame.new(offset)
+
+			BookClone.Parent = npc
+			BookClone.Anchored = true
+		end
+
+		ReadingAnimation:Play()
+		BookClone:Destroy()
+		local state = "waiting"
+		makeOrder(TableId, npc, state)
+		showOrderAboveNPC(orderItems)
+	end
+end)
