@@ -1,0 +1,171 @@
+import serial
+import serial.tools.list_ports
+import numpy as np
+import tkinter as tk
+from tkinter import ttk
+from scipy.signal import butter, sosfilt
+from scipy.fftpack import rfft
+from concurrent.futures import ThreadPoolExecutor
+import queue
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+def get_com_ports():
+    return [port.device for port in serial.tools.list_ports.comports()]
+
+ser = None
+fs, buffer_size = 200, 12
+update_queue = queue.Queue()
+executor = ThreadPoolExecutor(max_workers=2)
+buffer = []
+data_diff = []
+
+root = tk.Tk()
+root.title("Выбор COM-порта")
+root.geometry("400x200")
+
+tk.Label(root, text="Выберите COM-порт:").pack(pady=10)
+com_ports = get_com_ports()
+com_var = tk.StringVar(value=com_ports[0] if com_ports else "")
+com_menu = ttk.Combobox(root, textvariable=com_var, values=com_ports)
+com_menu.pack()
+
+def bandpass_filter(data):
+    sos = butter(2, [8 / (fs / 2), 30 / (fs / 2)], btype='band', output='sos')
+    return sosfilt(sos, data)
+
+def compute_fft(data, fs):
+    N = len(data)
+    fft_values = np.abs(rfft(data))
+    freqs = np.fft.rfftfreq(N, d=1 / fs)
+    min_len = min(len(freqs), len(fft_values))
+    return freqs[:min_len], fft_values[:min_len]
+
+def detect_emotion(alpha, beta, gamma, power_diff):
+    total_power = np.sum(alpha) + np.sum(beta) + np.sum(gamma)
+    if total_power < 0.5:
+        return "Нет сигнала / шум"
+    if power_diff > 500:
+        return "Сильная сосредоточенность или возбуждение"
+    return "Сосредоточенность" if np.mean(beta) > np.mean(alpha) else "Расслабленность"
+
+def read_eeg_data():
+    line = ser.read_until(b'\n').decode('utf-8').strip()
+    try:
+        parts = line.split(';')
+        if len(parts) >= 5:
+            time_ms = int(parts[0])
+            values = [float(x) for x in parts[1:5]]
+            return time_ms, values
+    except ValueError:
+        pass
+    return None
+
+def start_main_gui():
+    global ser, root
+    com_port = com_var.get()
+    if not com_port:
+        return
+
+    try:
+        ser = serial.Serial(com_port, 230400, timeout=1)
+    except serial.SerialException as e:
+        print(f"Ошибка: {e}")
+        return
+
+    root.destroy()
+    root = tk.Tk()
+    root.title("EEG Данные")
+    root.geometry("600x400")
+
+    global label, data_label, canvas, fig, ax, line
+
+    label = tk.Label(root, text="Ожидание данных...", font=("Arial", 16))
+    label.pack(pady=10)
+
+    data_label = tk.Label(root, text="", font=("Arial", 14))
+    data_label.pack(pady=5)
+
+    fig, ax = plt.subplots()
+    line, = ax.plot([], [], lw=2)
+    ax.set_title("Разница мощности альфа и бета волн")
+    ax.set_xlabel("Время (сг.)")
+    ax.set_ylabel("Разница мощности")
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 1000)
+
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas.get_tk_widget().pack()
+    canvas.draw()
+
+    tk.Button(root, text="Очистить график", command=clear_plot).pack(pady=5)
+    tk.Button(root, text="Закрыть", command=close_program).pack(pady=5)
+
+    root.after(1, update_display)
+    root.after(1, update_plot)
+    root.after(1, process_ui_updates)
+    root.mainloop()
+
+def clear_plot():
+    global data_diff
+    data_diff.clear()
+    line.set_data([], [])
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 1000)
+    canvas.draw()
+
+def update_plot():
+    if data_diff:
+        line.set_data(range(len(data_diff)), data_diff)
+        ax.set_xlim(0, len(data_diff))
+        ax.set_ylim(0, max(data_diff) * 1.1)
+        canvas.draw()
+    root.after(1, update_plot)
+
+def update_display():
+    while ser.in_waiting:
+        eeg_data = read_eeg_data()
+        if eeg_data:
+            time_ms, values = eeg_data
+            buffer.append(values)
+            data_label.config(text=f"Данные: {values}")
+            if len(buffer) >= buffer_size:
+                future = executor.submit(process_eeg_data, np.array(buffer))
+                buffer.clear()
+                future.add_done_callback(lambda fut: update_queue.put(fut.result()))
+    root.after(1, update_display)
+
+def process_eeg_data(data):
+    try:
+        filtered_data = np.array([bandpass_filter(ch) for ch in data.T])
+    except ValueError as e:
+        print(f"Ошибка фильтрации: {e}")
+        return None
+
+    alpha_power, beta_power, gamma_power = [], [], []
+    for ch_data in filtered_data:
+        freqs, power_spectrum = compute_fft(ch_data, fs)
+        alpha_power.append(np.sum(power_spectrum[(freqs >= 8) & (freqs < 12)]))
+        beta_power.append(np.sum(power_spectrum[(freqs >= 12) & (freqs < 30)]))
+        gamma_power.append(np.sum(power_spectrum[(freqs >= 30) & (freqs < 100)]))
+
+    power_diff = np.abs(np.array(alpha_power) - np.array(beta_power))
+    data_diff.append(np.mean(power_diff))
+    return detect_emotion(alpha_power, beta_power, gamma_power, np.mean(power_diff))
+
+def process_ui_updates():
+    try:
+        emotion = update_queue.get_nowait()
+        label.config(text=f"Эмоция: {emotion}")
+    except queue.Empty:
+        pass
+    root.after(1, process_ui_updates)
+
+def close_program():
+    if ser:
+        ser.close()
+    plt.savefig("eeg_data_plot.png")
+    root.quit()
+
+tk.Button(root, text="Подключиться", command=start_main_gui).pack(pady=20)
+root.mainloop()
