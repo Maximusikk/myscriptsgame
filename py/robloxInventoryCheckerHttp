@@ -1,0 +1,119 @@
+import re
+import requests
+import os
+import json
+
+PROXIES = {
+    "http": "",
+    "https": ""
+}
+
+def find_nicknames(input_file, output_file):
+    pattern = r'\b[A-Za-z]{8}\d{2,3}\b' 
+
+    with open(input_file, 'r') as infile:
+        lines = infile.readlines()
+
+    nicknames = []
+    for line in lines:
+        matches = re.findall(pattern, line)
+        nicknames.extend(matches)
+
+    with open(output_file, 'w') as outfile:
+        for nickname in nicknames:
+            outfile.write(nickname + '\n')
+
+    print(f"Найдено {len(nicknames)} никнеймов. Они записаны в {output_file}.")
+    return nicknames
+
+def get_user_id(username):
+    url = "https://users.roblox.com/v1/usernames/users"
+    payload = {"usernames": [username], "excludeBannedUsers": False}
+    try:
+        response = requests.post(url, json=payload, proxies=PROXIES)
+        if response.status_code == 200:
+            data = response.json()
+            if data["data"]:
+                return data["data"][0]["id"]  
+        else:
+            print(f"Ошибка при запросе ID пользователя {username}: {response.status_code}")
+    except requests.RequestException as e:
+        print(f"Ошибка при запросе ID пользователя {username}: {e}")
+    return None
+
+def has_item_in_inventory(user_id, item_id):
+    url = f"https://inventory.roblox.com/v2/users/{user_id}/inventory/41"
+    print(f"Запрос инвентаря для пользователя {user_id}: {url}") 
+    try:
+        response = requests.get(url, proxies=PROXIES)
+        if response.status_code == 200:
+            inventory_data = response.json()
+            print(f"Ответ для пользователя {user_id}: {json.dumps(inventory_data, indent=2)}")
+            for item in inventory_data.get("data", []):
+                if item["assetId"] == item_id:
+                    print(f"Предмет с ID {item_id} есть в инвентаре пользователя {user_id}.")
+                    return True 
+        else:
+            print(f"Ошибка при запросе инвентаря пользователя {user_id}: {response.status_code} - {response.text}")
+    except requests.RequestException as e:
+        print(f"Ошибка при запросе инвентаря пользователя {user_id}: {e}")
+    return False  
+
+def load_checked_nicknames(file_path):
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as file:
+            return json.load(file)
+    return {}
+
+def save_checked_nicknames(file_path, data):
+    with open(file_path, 'w') as file:
+        json.dump(data, file)
+
+def process_nicknames(input_file, intermediate_file, output_file, item_id, cache_file):
+
+    checked_nicknames = load_checked_nicknames(cache_file)
+    print("Ищем никнеймы в текстовом файле...")
+    find_nicknames(input_file, intermediate_file)
+
+    print("Проверяем, есть ли предмет в инвентаре у найденных никнеймов...")
+    with open(intermediate_file, 'r') as infile:
+        nicknames = infile.read().splitlines()
+
+    results = []  
+    missing_items = []
+    for nickname in nicknames:
+        if nickname in checked_nicknames:
+            print(f"{nickname} уже проверен.")
+            if checked_nicknames[nickname]: 
+                continue
+            else:
+                missing_items.append(nickname)  
+            continue
+
+        print(f"Проверяем никнейм: {nickname}")
+        user_id = get_user_id(nickname)
+        if user_id:
+            print(f"User ID для {nickname}: {user_id}")
+            has_item_flag = has_item_in_inventory(user_id, item_id)
+            checked_nicknames[nickname] = not has_item_flag 
+            if not has_item_flag:
+                missing_items.append(nickname) 
+        else:
+            checked_nicknames[nickname] = None
+
+    with open(output_file, 'w') as outfile:
+        outfile.write("\n".join(missing_items)) 
+
+    save_checked_nicknames(cache_file, checked_nicknames)
+
+    print(f"Процесс завершён. Результаты проверки записаны в {output_file}. Пользователи без предмета записаны в {output_file}.")
+
+
+input_file = 'input.txt'  
+intermediate_file = 'found_nicknames.txt'  
+output_file = 'item_check_results.txt'  
+cache_file = 'checked_nicknames.json'  
+item_id = 11599969557  
+
+# Запускаем процесс
+process_nicknames(input_file, intermediate_file, output_file, item_id, cache_file)
