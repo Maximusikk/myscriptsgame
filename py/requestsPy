@@ -1,0 +1,115 @@
+import requests
+import tkinter as KavaSign
+from tkinter import Tk, PhotoImage, Label, StringVar, Radiobutton
+import random
+import json
+import time
+from tkinter import Tk, Entry, Radiobutton, StringVar, Label, Button
+
+import requests
+import json
+import psutil
+import os
+soundpad_path = r"C:\Python Projects\pythonProject8\Soundpad\Soundpad.exe"
+
+def launch_soundpad():
+    try:
+        os.startfile(soundpad_path)
+        print("Soundpad успешно запущен.")
+    except Exception as e:
+        print(f"Ошибка при запуске Soundpad: {e}")
+
+launch_soundpad()
+
+def close_soundpad():
+    for proc in psutil.process_iter(attrs=['pid', 'name']):
+        if 'Soundpad.exe' in proc.info['name']:
+            proc.terminate()
+            print("Soundpad закрыт.")
+            return
+    print("Soundpad не найден.")
+
+def text_to_speech_apihost(event):
+    text = text_entry.get()
+    url = "https://apihost.ru/tts.php"
+    headers = {"Content-Type": "application/json"}
+    payload = {"data":[{"lang":"ru-RU","speaker":570,"emotion":"1","text":f"{text}","rate":1,"pitch":1,"type":"wav","pause":"0","spam":"content"}]}
+    try:
+        response = requests.post(url, data=json.dumps(payload))
+        if response.status_code == 200:
+            response_data = response.json()
+            audio_url = response_data.get('audio')
+            audio_response = requests.get(audio_url)
+            if audio_response.status_code == 200:
+                with open("output.mp3", "wb") as f:
+                    f.write(audio_response.content)
+                print("Аудиофайл успешно сохранен")
+                status_label.config(text="True", fg="green")
+                root.after(2000, update_status_label, "")
+            else:
+                print(f"Ошибка при загрузке аудиофайла: {audio_response.status_code}")
+                status_label.config(text="False", fg="red")
+        else:
+            print(f"Ошибка: {response.status_code}")
+            status_label.config(text="False", fg="red")
+    except requests.exceptions.RequestException as err:
+        print(f"Ошибка: {err}")
+        status_label.config(text="False", fg="red")
+        print(response.text)
+
+def update_status_label(text):
+    status_label.config(text=text)
+
+root = Tk()
+root.wm_title("text to voice")
+root.geometry("260x220")
+
+base_dir = os.path.dirname(os.path.abspath(__file__))
+
+start_time = time.time()
+
+def on_close():
+    global total_time
+    elapsed_time = int(time.time() - start_time)
+    total_time += elapsed_time
+    close_soundpad()
+    root.destroy()
+
+text_entry = Entry(root, font=('Arial', 14))
+text_entry.pack()
+text_entry.focus_set()
+
+speed_entry = Entry(root, font=('Arial', 14))
+speed_entry.pack_forget()
+
+mode = StringVar()
+mode.set('apihost_max')
+
+radiobuttons = [
+    ("apihost Max", 'apihost_max')
+]
+
+for text, value in radiobuttons:
+    rb = Radiobutton(root, text=text, variable=mode, value=value)
+    rb.pack()
+
+root.bind('<Return>', lambda event:
+    text_to_speech_apihost(event) if mode.get() == 'apihost_max'
+    else  print("kek")
+)
+
+status_label = Label(root, text="", font=('Arial', 14))
+clear_button = Button(root, text="Очистить", command=lambda: text_entry.delete(0, 'end'))
+clear_button.pack()
+status_label.pack()
+
+timer_label = Label(root, text="", font=('Arial', 14))
+timer_label.pack()
+
+root.bind("<FocusIn>", lambda event: text_entry.select_range(0, 'end'))
+root.bind('<Control-c>', lambda event: root.clipboard_append(text_entry.get()))
+root.bind('<Control-v>', lambda event: text_entry.insert('insert', root.clipboard_get()))
+
+root.protocol("WM_DELETE_WINDOW", on_close)
+
+root.mainloop()
